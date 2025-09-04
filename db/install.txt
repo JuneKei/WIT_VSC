@@ -1,0 +1,10 @@
+# PostgreSQL 드라이버와 타입 정의 설치
+npm install pg
+npm install --save-dev @types/pg
+
+# .env 파일로 환경 변수를 관리하기 위한 라이브러리 설치
+npm install dotenv
+
+# 테스트 
+npm install -g ts-node
+ts-node test-db.ts

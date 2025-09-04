@@ -1,0 +1,106 @@
+{
+  "name": "wit-ts",
+  "displayName": "wit-ts",
+  "description": "what is this",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.73.1"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+        "title": "db setting",
+        "properties": {
+            "wit.product_name": {
+                "type": "string",
+                "description": "Product 이름"
+            },
+            "wit.pgHost": {
+                "type": "string",
+                "default": "localhost",
+                "description": "PostgreSQL 호스트 주소"
+            },
+            "wit.pgPort": {
+                "type": "number",
+                "default": 5432,
+                "description": "PostgreSQL 포트"
+            },
+            "wit.pgUser": {
+                "type": "string",
+                "description": "PostgreSQL 사용자 이름"
+            },
+            "wit.pgPassword": {
+                "type": "string",
+                "description": "PostgreSQL 비밀번호"
+            },
+            "wit.pgDatabase": {
+                "type": "string",
+                "description": "접속할 PostgreSQL 데이터베이스"
+            },
+            "wit.pgSchema": {
+                "type": "string",
+                "description": "사용할 PostgreSQL 스키마"
+            }
+        }
+    },
+    "commands": [
+      {
+        "command": "wit-ts.showPanel",
+        "title": "Show WIT Panel"
+      }
+    ],
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "wit-panel-container",
+          "title": "WIT",
+          "icon": "$(beaker)"
+        }
+      ]
+    },
+    "views": {
+      "wit-panel-container": [
+        {
+          "type": "webview",
+          "id": "witView",
+          "name": "WIT Details"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "npm run clean && node esbuild.js --production",
+    "watch:build": "npm run clean && node esbuild.js --watch",
+    "watch:tsc": "tsc --noEmit --watch --project tsconfig.json",
+    "watch": "npm-run-all -p watch:*",
+    "lint": "eslint . --ext ts",
+    "clean": "rimraf dist",
+    "test": "vscode-test"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.6",
+    "@types/node": "18.x",
+    "@types/pg": "^8.15.5",
+    "@types/vscode": "^1.73.0",
+    "@typescript-eslint/eslint-plugin": "^7.7.0",
+    "@typescript-eslint/parser": "^7.7.0",
+    "@vscode/test-cli": "^0.0.9",
+    "@vscode/test-electron": "^2.2.0",
+    "esbuild": "^0.20.2",
+    "eslint": "^8.57.0",
+    "npm-run-all": "^4.1.5",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "dotenv": "^17.2.2",
+    "pg": "^8.16.3"
+  }
+}
