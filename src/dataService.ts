@@ -1,138 +1,105 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
-import { FsItem, FsItemType } from './types';
-import db from './db'; // DB 모듈 import
+import db from './db'; // 실제 DB 모듈 import
+import type { FsItem, FsItemType } from './types';
 
-// --- 리팩토링된 코드 ---
-
-// 반복 사용되는 값들을 상수로 정의하여 관리 용이성 및 가독성 향상
-// const PRODUCT_ID = 1;
-const config = vscode.workspace.getConfiguration('wit');
-const PRODUCT_NAME = config.get<string>('product_name');
-const DEFAULT_DESCRIPTION = '아직 등록된 설명이 없습니다. 클릭하여 추가하세요.';
-
-// product_id를 저장할 전역 변수
-let globalProductId: number | null = null;
-/**
- * 데이터베이스에서 조회된 행(Row)의 데이터 구조를 정의합니다.
- */
-interface FsItemDbRow {
-    item_path: string;
-    item_name: string;
-    item_type: FsItemType;
-    description: string | null; // DB의 description은 NULL일 수 있습니다.
-}
-
+// 전역 변수로 현재 Product ID를 저장하여 반복적인 DB 조회를 피합니다.
+let currentProductId: number | null = null;
 
 /**
- * 경로(path)와 설명(description)을 기반으로 FsItem 객체를 생성하는 팩토리 함수입니다.
- * 객체 생성 로직을 중앙에서 관리하여 일관성을 유지합니다.
- * @param p - 파일 시스템 아이템의 상대 경로
- * @param description - 아이템의 설명 (optional)
- * @returns FsItem 객체
+ * Product 이름을 받아 DB에서 ID를 찾아 반환합니다. 없으면 새로 생성합니다.
+ * @param productName 찾거나 생성할 Product의 이름
+ * @returns Product의 ID
  */
-function createFsItemFromPath(p: string, description?: string | null): FsItem {
-    return {
-        path: p,
-        name: determineNameFromPath(p),
-        type: determineTypeFromPath(p),
-        description: description || DEFAULT_DESCRIPTION,
-    };
-}
-
-/**
- * 주어진 PRODUCT NAME 에 해당하는 PRODUCT ID를 DB에서 조회합니다.
- * @returns 각 경로에 대한 정보 객체의 배열
- */
-export async function getProductIdFromDB(): Promise<void> {
-    if (!PRODUCT_NAME || PRODUCT_NAME.length === 0) {
-        console.warn("Product name is not set.");
-        globalProductId = null;
-        return;
+export async function getProductId(productName: string): Promise<number | null> {
+    if (currentProductId) {
+        return currentProductId;
     }
-
     try {
-        const queryText = `
-            SELECT product_id FROM products WHERE product_name = $1
-        `;
-        const { rows } = await db.query<{ product_id: number }>(queryText, [PRODUCT_NAME]);
+        let result = await db.query<{ product_id: number }>(
+            'SELECT product_id FROM products WHERE product_name = $1',
+            [productName]
+        );
 
-        if (rows.length > 0) {
-            globalProductId = rows[0].product_id;
-            console.log(`Successfully fetched product ID: ${globalProductId}`);
+        if (result.rows.length > 0) {
+            currentProductId = result.rows[0].product_id;
         } else {
-            console.warn(`Product '${PRODUCT_NAME}' not found in the database.`);
-            globalProductId = null;
+            result = await db.query<{ product_id: number }>(
+                'INSERT INTO products (product_name) VALUES ($1) RETURNING product_id',
+                [productName]
+            );
+            currentProductId = result.rows[0].product_id;
+            vscode.window.showInformationMessage(`WIT: 새로운 제품 '${productName}'이(가) 등록되었습니다.`);
         }
+        
+        console.log(`Current Product ID: ${currentProductId}`);
+        return currentProductId;
     } catch (error) {
-        console.error("Error fetching product ID from DB:", error);
-        globalProductId = null;
+        console.error("데이터베이스 오류 (getProductId):", error);
+        vscode.window.showErrorMessage('WIT 데이터베이스에 연결하지 못했습니다.');
+        return null;
     }
 }
+
 /**
- * 주어진 경로 배열에 해당하는 정보를 DB에서 조회합니다.
- * @param paths - 조회할 상대 경로들의 배열
- * @returns 각 경로에 대한 정보 객체의 배열
+ * DB에서 여러 항목의 정보를 조회합니다. DB에 없는 항목은 기본값으로 반환합니다.
+ * @param productId 현재 Product의 ID
+ * @param items 조회할 항목의 기본 정보 배열
+ * @returns 설명이 포함된 전체 FsItem 객체 배열
  */
-export async function getInfoFromDB(paths: string[]): Promise<FsItem[]> {
-    if (paths.length === 0) {
+export async function getInfosFromDB(productId: number, items: { name: string, path: string, type: FsItemType }[]): Promise<FsItem[]> {
+    if (items.length === 0) {
         return [];
     }
 
+    const paths = items.map(item => item.path);
     const queryText = `
-        SELECT item_path, item_name, item_type, description
+        SELECT item_path, description
         FROM fs_items
         WHERE product_id = $1 AND item_path = ANY($2::text[])
     `;
-    // db.query에 제네릭<FsItemDbRow>을 사용하여 반환 타입을 명시합니다.
-    const { rows } = await db.query<FsItemDbRow>(queryText, [globalProductId, paths]);
 
-    // DB에서 찾은 정보를 Map으로 변환하여 조회 성능을 향상시킵니다.
-    const foundItems = new Map<string, FsItem>(
-        rows.map(row => [row.item_path, createFsItemFromPath(row.item_path, row.description)])
-    );
-    
-    // 요청된 모든 경로에 대해, DB에 정보가 없으면 기본값을 생성하여 반환합니다.
-    return paths.map(p => foundItems.get(p) || createFsItemFromPath(p));
+    try {
+        const { rows } = await db.query<{ item_path: string, description: string }>(queryText, [productId, paths]);
+
+        // DB에서 찾은 설명을 Map으로 변환하여 조회 성능을 높입니다.
+        const descriptions = new Map<string, string>(rows.map(row => [row.item_path, row.description]));
+        
+        // 원본 item 배열에 DB에서 찾은 설명을 합쳐줍니다.
+        return items.map(item => ({
+            ...item,
+            description: descriptions.get(item.path) || '클릭하여 설명을 추가하세요.'
+        }));
+    } catch (error) {
+        console.error("데이터베이스 오류 (getInfosFromDB):", error);
+        // 오류가 발생해도 기본 설명으로 UI가 렌더링되도록 처리합니다.
+        return items.map(item => ({ ...item, description: 'DB 오류 발생' }));
+    }
 }
 
 /**
- * DB의 설명을 업데이트하거나 새로 생성합니다. (Upsert)
- * @param relativePath - 업데이트할 항목의 상대 경로
- * @param newDescription - 새로운 설명 텍스트
+ * DB에 항목의 설명을 추가하거나 업데이트합니다. (UPSERT)
+ * @param productId 현재 Product의 ID
+ * @param item 업데이트할 항목의 전체 정보
  */
-export async function updateInfoInDB(relativePath: string, newDescription: string): Promise<void> {
-    const type = determineTypeFromPath(relativePath);
-    const name = determineNameFromPath(relativePath);
+export async function updateInfoInDB(productId: number, item: FsItem): Promise<void> {
+    const { path, type, name, description } = item;
 
-    // PostgreSQL의 UPSERT(INSERT ... ON CONFLICT) 구문을 사용하여 단일 쿼리로 효율적인 데이터 처리를 합니다.
     const queryText = `
-        INSERT INTO fs_items (product_id, item_path, item_type, item_name, description)
-        VALUES ($1, $2, $3, $4, $5)
+        INSERT INTO fs_items (product_id, item_path, item_type, item_name, description, parent_id)
+        VALUES ($1, $2, $3, $4, $5, (SELECT item_id FROM fs_items WHERE product_id = $1 AND item_path = $6))
         ON CONFLICT (product_id, item_path)
         DO UPDATE SET
-            description = EXCLUDED.description,
-            updated_at = NOW();
+            description = EXCLUDED.description
     `;
     
-    await db.query(queryText, [globalProductId, relativePath, type, name, newDescription]);
-    console.log(`DB-GLOBAL-UPSERT: ${relativePath} -> "${newDescription}"`);
+    try {
+        // 부모 경로를 계산합니다.
+        const parentPath = path.includes('#') ? path.substring(0, path.lastIndexOf('#')) : path.substring(0, path.lastIndexOf('/'));
+        
+        await db.query(queryText, [productId, path, type, name, description, parentPath || null]);
+        console.log(`DB-UPSERT: "${path}" -> "${description}"`);
+    } catch (error) {
+        console.error("데이터베이스 오류 (updateInfoInDB):", error);
+        vscode.window.showErrorMessage(`'${name}' 항목의 설명을 저장하는 데 실패했습니다.`);
+    }
 }
-
-/**
- * 경로 문자열을 기반으로 아이템의 타입을 결정합니다.
- */
-function determineTypeFromPath(p: string): FsItemType {
-    if (p.includes('#')) return 'function';
-    if (path.extname(p)) return 'file';
-    return 'folder';
-}
-
-/**
- * 경로 문자열을 기반으로 아이템의 이름을 결정합니다.
- */
-function determineNameFromPath(p: string): string {
-    if (p.includes('#')) return p.split('#')[1] || '';
-    return path.basename(p);
-}
-
