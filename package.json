@@ -3,20 +3,22 @@
   "publisher": "JuneKei",
   "displayName": "WIT (What Is This)",
   "description": "WIT (What Is This) is an extension that helps you understand code by documenting files and symbols.",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "repository": {
     "type": "git",
     "url": "https://github.com/junekei/wit_vsc.git"
   },
   "license": "Apache-2.0",
-  "icon": "images/icon.png",
+  "icon": "icon.png",
   "engines": {
     "vscode": "^1.73.1"
   },
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onCommand:wit.showPanel"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "configuration": {
@@ -51,7 +53,7 @@
     "commands": [
       {
         "command": "wit.showPanel",
-        "title": "oepn wit"
+        "title": "open wit"
       }
     ],
     "viewsContainers": {
@@ -68,7 +70,7 @@
         {
           "type": "webview",
           "id": "witView",
-          "name": "WIT Details"
+          "name": ""
         }
       ]
     }
