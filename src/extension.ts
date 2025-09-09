@@ -9,9 +9,11 @@ export async function activate(context: vscode.ExtensionContext) {
         vscode.window.registerWebviewViewProvider(WebViewProvider.viewType, provider)
     );
 
-    // EventManager를 생성하고 초기화합니다.
     const eventManager = new EventManager(context, provider);
     await eventManager.initialize(); 
+
+    // 생성된 eventManager 인스턴스를 provider에 설정합니다.
+    provider.setEventManager(eventManager);
 
     context.subscriptions.push(
         vscode.commands.registerCommand('wit.showPanel', () => {

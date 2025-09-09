@@ -23,6 +23,10 @@ export class EventManager {
         }
     }
 
+    public getCurrentFullTreeData(): FsItem[] {
+        return this.currentFullTreeData;
+    }
+
     public async initialize(): Promise<void> {
         const workspaceRoot = vscodeUtils.getWorkspaceRootPath();
         if (!workspaceRoot) {

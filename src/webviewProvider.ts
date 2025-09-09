@@ -3,6 +3,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as vscodeUtils from './vscodeUtils'; 
 import { FsItem } from './types';
+import { EventManager } from './eventManager';
 
 export class WebViewProvider implements vscode.WebviewViewProvider {
 
@@ -10,6 +11,7 @@ export class WebViewProvider implements vscode.WebviewViewProvider {
 
     private _view?: vscode.WebviewView;
     private _context: vscode.ExtensionContext;
+    private _eventManager?: EventManager;
 
     // 메시지 전달을 위한 EventEmitter 추가
     private readonly _onDidReceiveMessage = new vscode.EventEmitter<any>();
@@ -20,10 +22,17 @@ export class WebViewProvider implements vscode.WebviewViewProvider {
         this._context = context;
     }
 
-    // 파일/심볼 통합 트리를 업데이트하는 메서드
-    public updateTree(treeData: FsItem[]): void { // 타입을 FsItem[]으로 변경
-        this._view?.webview.postMessage({ command: 'updateTree', data: treeData });
+    public setEventManager(eventManager: EventManager): void {
+        this._eventManager = eventManager;
     }
+
+    public updateTree(treeData: FsItem[]): void {
+        // 웹뷰가 실제로 화면에 보일 때만 메시지를 보냅니다.
+        if (this._view?.visible) {
+            this._view.webview.postMessage({ command: 'updateTree', data: treeData });
+        }
+    }
+
 
     public resolveWebviewView(
         webviewView: vscode.WebviewView,
@@ -45,6 +54,22 @@ export class WebViewProvider implements vscode.WebviewViewProvider {
         );
 
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
+
+        webviewView.onDidChangeVisibility(() => {
+            if (webviewView.visible && this._eventManager) {
+                // 패널이 다시 보일 때, EventManager에 캐시된 최신 데이터를 가져와 업데이트합니다.
+                const lastData = this._eventManager.getCurrentFullTreeData();
+                this.updateTree(lastData);
+            }
+        });
+        
+        // 웹뷰가 다시 표시될 때 EventManager에 저장된 마지막 데이터를 가져와 복원합니다.
+        if (this._eventManager) {
+            const lastData = this._eventManager.getCurrentFullTreeData();
+            if (lastData && lastData.length > 0) {
+                this.updateTree(lastData);
+            }
+        }
     }
 
     /**
